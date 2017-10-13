@@ -34,7 +34,24 @@
 typedef struct {
     int ref;
     int narg;
+    int call;
 } gcfn_t;
+
+
+static int disable_lua( lua_State *L )
+{
+    gcfn_t *fn = luaL_checkudata( L, 1, MODULE_MT );
+    fn->call = 0;
+    return 0;
+}
+
+
+static int enable_lua( lua_State *L )
+{
+    gcfn_t *fn = luaL_checkudata( L, 1, MODULE_MT );
+    fn->call = 1;
+    return 0;
+}
 
 
 static int rungcfn_lua( lua_State *L )
@@ -65,12 +82,15 @@ static int gc_lua( lua_State *L )
 {
     gcfn_t *fn = (gcfn_t*)lua_touserdata( L, 1 );
 
+    // call closure
+    if( fn->call ){
+        lua_rawgeti( L, LUA_REGISTRYINDEX, fn->ref );
+        lua_pushinteger( L, fn->narg );
+        lua_call( L, 1, 0 );
+    }
+
     // release closure
-    lua_rawgeti( L, LUA_REGISTRYINDEX, fn->ref );
     luaL_unref( L, LUA_REGISTRYINDEX, fn->ref );
-    // run closure
-    lua_pushinteger( L, fn->narg );
-    lua_call( L, 1, 0 );
 
     return 0;
 }
@@ -96,6 +116,7 @@ static int new_lua( lua_State *L )
     lua_pushvalue( L, -2 );
     fn->ref = luaL_ref( L, LUA_REGISTRYINDEX );
     fn->narg = narg;
+    fn->call = 1;
 
     luaL_getmetatable( L, MODULE_MT );
     lua_setmetatable( L, -2 );
@@ -106,13 +127,37 @@ static int new_lua( lua_State *L )
 
 LUALIB_API int luaopen_gcfn( lua_State *L )
 {
+    struct luaL_Reg mmethod[] = {
+        { "__tostring", tostring_lua },
+        { "__gc", gc_lua },
+        { NULL, NULL }
+    };
+    struct luaL_Reg method[] = {
+        { "enable", enable_lua },
+        { "disable", disable_lua },
+        { NULL, NULL }
+    };
+    struct luaL_Reg *ptr = mmethod;
+
     // create gcfn metatable
     luaL_newmetatable( L, MODULE_MT );
-    lua_pushstring( L, "__tostring" );
-    lua_pushcfunction( L, tostring_lua );
-    lua_rawset( L, -3 );
-    lua_pushstring( L, "__gc" );
-    lua_pushcfunction( L, gc_lua );
+    // metamethods
+    while( ptr->name ){
+        lua_pushstring( L, ptr->name );
+        lua_pushcfunction( L, ptr->func );
+        lua_rawset( L, -3 );
+        ptr++;
+    }
+    // metamethods
+    ptr = method;
+    lua_pushstring( L, "__index" );
+    lua_newtable( L );
+    while( ptr->name ){
+        lua_pushstring( L, ptr->name );
+        lua_pushcfunction( L, ptr->func );
+        lua_rawset( L, -3 );
+        ptr++;
+    }
     lua_rawset( L, -3 );
     lua_pop( L, 1 );
 
