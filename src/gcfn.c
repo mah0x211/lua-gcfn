@@ -76,6 +76,13 @@ static int gc_lua( lua_State *L )
 }
 
 
+static int tostring_lua( lua_State *L )
+{
+    lua_pushfstring( L, MODULE_MT ": %p", lua_touserdata( L, 1 ) );
+    return 1;
+}
+
+
 static int new_lua( lua_State *L )
 {
     int narg = lua_gettop( L );
@@ -101,6 +108,9 @@ LUALIB_API int luaopen_gcfn( lua_State *L )
 {
     // create gcfn metatable
     luaL_newmetatable( L, MODULE_MT );
+    lua_pushstring( L, "__tostring" );
+    lua_pushcfunction( L, tostring_lua );
+    lua_rawset( L, -3 );
     lua_pushstring( L, "__gc" );
     lua_pushcfunction( L, gc_lua );
     lua_rawset( L, -3 );
