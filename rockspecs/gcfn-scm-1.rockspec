@@ -15,7 +15,7 @@ dependencies = {
 build = {
     type = "builtin",
     modules = {
-        ['gcfn'] = {
+        ["gcfn"] = {
             sources = { "src/gcfn.c" }
         },
     }
