@@ -33,7 +33,6 @@
 
 typedef struct {
     int ref;
-    int narg;
     int call;
 } gcfn_t;
 
@@ -56,21 +55,21 @@ static int enable_lua( lua_State *L )
 
 static int rungcfn_lua( lua_State *L )
 {
-    int narg = lua_tointeger( L, 1 );
-    int i = 1;
+    lua_State *co = NULL;
 
-    // push upvalues
-    for(; i <= narg; i++ ){
-        lua_pushvalue( L, lua_upvalueindex( i ) );
-    }
+    // push upvalues to stack
+    lua_pushvalue( L, lua_upvalueindex( 1 ) );
+    co = lua_tothread( L, 1 );
 
-    // call gcfn
-    switch( lua_pcall( L, narg - 1, 0, 0 ) ){
-        case 0:
-        break;
-
-        default:
-            printf( "%s\n", lua_tostring( L, -1 ) );
+    // run thread
+    if(
+#if LUA_VERSION_NUM >= 502
+        lua_resume( co, L, lua_gettop( co ) - 1 )
+#else
+        lua_resume( co, lua_gettop( co ) - 1 )
+#endif
+    ){
+        fprintf( stderr, "%s\n", lua_tostring( co, -1 ) );
     }
 
     return 0;
@@ -82,10 +81,13 @@ static int gc_lua( lua_State *L )
     gcfn_t *fn = (gcfn_t*)lua_touserdata( L, 1 );
 
     // call closure
-    if( fn->call ){
+    if( fn->call )
+    {
         lua_rawgeti( L, LUA_REGISTRYINDEX, fn->ref );
-        lua_pushinteger( L, fn->narg );
-        lua_call( L, 1, 0 );
+        // call gcfn
+        if( lua_pcall( L, 0, 0, 0 ) ){
+            fprintf( stderr, "%s\n", lua_tostring( L, -1 ) );
+        }
     }
 
     // release closure
@@ -104,19 +106,28 @@ static int tostring_lua( lua_State *L )
 
 static int new_lua( lua_State *L )
 {
-    int narg = lua_gettop( L );
     gcfn_t *fn = NULL;
+    lua_State *co = NULL;
+    int ref = LUA_NOREF;
 
     luaL_checktype( L, 1, LUA_TFUNCTION );
-    lua_pushcclosure( L, rungcfn_lua, narg );
+    // move all argument to coroutine
+    co = lua_newthread( L );
+    ref = luaL_ref( L, LUA_REGISTRYINDEX );
+    lua_xmove( L, co, lua_gettop( L ) );
 
+    // add closure function
+    lua_rawgeti( L, LUA_REGISTRYINDEX, ref );
+    luaL_unref( L, LUA_REGISTRYINDEX, ref );
+    lua_pushcclosure( L, rungcfn_lua, 1 );
     // retain closure reference
-    fn = (gcfn_t*)lua_newuserdata( L, sizeof( gcfn_t ) );
-    lua_pushvalue( L, -2 );
-    fn->ref = luaL_ref( L, LUA_REGISTRYINDEX );
-    fn->narg = narg;
-    fn->call = 1;
+    ref = luaL_ref( L, LUA_REGISTRYINDEX );
 
+    fn = (gcfn_t*)lua_newuserdata( L, sizeof( gcfn_t ) );
+    *fn = (gcfn_t){
+        .ref = ref,
+        .call = 1
+    };
     luaL_getmetatable( L, MODULE_MT );
     lua_setmetatable( L, -2 );
 
