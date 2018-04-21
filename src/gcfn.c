@@ -65,7 +65,6 @@ static int rungcfn_lua( lua_State *L )
     }
 
     // call gcfn
-    printf("call gcfn\n");
     switch( lua_pcall( L, narg - 1, 0, 0 ) ){
         case 0:
         break;
