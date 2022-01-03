@@ -24,154 +24,147 @@
  *  Created by Masatoshi Teruya on 17/10/13.
  */
 
-#include <lua.h>
 #include <lauxlib.h>
-
+#include <lua.h>
 
 #define MODULE_MT "gcfn"
-
 
 typedef struct {
     int ref;
     int call;
 } gcfn_t;
 
-
-static int disable_lua( lua_State *L )
+static int disable_lua(lua_State *L)
 {
-    gcfn_t *fn = luaL_checkudata( L, 1, MODULE_MT );
-    fn->call = 0;
+    gcfn_t *fn = luaL_checkudata(L, 1, MODULE_MT);
+    fn->call   = 0;
     return 0;
 }
 
-
-static int enable_lua( lua_State *L )
+static int enable_lua(lua_State *L)
 {
-    gcfn_t *fn = luaL_checkudata( L, 1, MODULE_MT );
-    fn->call = 1;
+    gcfn_t *fn = luaL_checkudata(L, 1, MODULE_MT);
+    fn->call   = 1;
     return 0;
 }
 
+#if LUA_VERSION_NUM >= 504
+static inline int resume(lua_State *L, lua_State *from, int narg)
+{
+    int nres = 0;
+    return lua_resume(L, from, narg, &nres);
+}
+#elif LUA_VERSION_NUM >= 502
+# define resume(L, from, narg) lua_resume(L, from, narg)
+#else
+# define resume(L, from, narg) lua_resume(L, narg)
+#endif
 
-static int rungcfn_lua( lua_State *L )
+static int rungcfn_lua(lua_State *L)
 {
     lua_State *co = NULL;
 
     // push upvalues to stack
-    lua_pushvalue( L, lua_upvalueindex( 1 ) );
-    co = lua_tothread( L, 1 );
+    lua_pushvalue(L, lua_upvalueindex(1));
+    co = lua_tothread(L, 1);
 
     // run thread
-    if(
-#if LUA_VERSION_NUM >= 502
-        lua_resume( co, L, lua_gettop( co ) - 1 )
-#else
-        lua_resume( co, lua_gettop( co ) - 1 )
-#endif
-    ){
-        fprintf( stderr, "%s\n", lua_tostring( co, -1 ) );
+    if (resume(co, L, lua_gettop(co) - 1)) {
+        fprintf(stderr, "%s\n", lua_tostring(co, -1));
     }
 
     return 0;
 }
 
-
-static int gc_lua( lua_State *L )
+static int gc_lua(lua_State *L)
 {
-    gcfn_t *fn = (gcfn_t*)lua_touserdata( L, 1 );
+    gcfn_t *fn = (gcfn_t *)lua_touserdata(L, 1);
 
     // call closure
-    if( fn->call )
-    {
-        lua_rawgeti( L, LUA_REGISTRYINDEX, fn->ref );
+    if (fn->call) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref);
         // call gcfn
-        if( lua_pcall( L, 0, 0, 0 ) ){
-            fprintf( stderr, "%s\n", lua_tostring( L, -1 ) );
+        if (lua_pcall(L, 0, 0, 0)) {
+            fprintf(stderr, "%s\n", lua_tostring(L, -1));
         }
     }
 
     // release closure
-    luaL_unref( L, LUA_REGISTRYINDEX, fn->ref );
+    luaL_unref(L, LUA_REGISTRYINDEX, fn->ref);
 
     return 0;
 }
 
-
-static int tostring_lua( lua_State *L )
+static int tostring_lua(lua_State *L)
 {
-    lua_pushfstring( L, MODULE_MT ": %p", lua_touserdata( L, 1 ) );
+    lua_pushfstring(L, MODULE_MT ": %p", lua_touserdata(L, 1));
     return 1;
 }
 
-
-static int new_lua( lua_State *L )
+static int new_lua(lua_State *L)
 {
-    gcfn_t *fn = NULL;
+    gcfn_t *fn    = NULL;
     lua_State *co = NULL;
-    int ref = LUA_NOREF;
+    int ref       = LUA_NOREF;
 
-    luaL_checktype( L, 1, LUA_TFUNCTION );
+    luaL_checktype(L, 1, LUA_TFUNCTION);
     // move all argument to coroutine
-    co = lua_newthread( L );
-    ref = luaL_ref( L, LUA_REGISTRYINDEX );
-    lua_xmove( L, co, lua_gettop( L ) );
+    co  = lua_newthread(L);
+    ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    lua_xmove(L, co, lua_gettop(L));
 
     // add closure function
-    lua_rawgeti( L, LUA_REGISTRYINDEX, ref );
-    luaL_unref( L, LUA_REGISTRYINDEX, ref );
-    lua_pushcclosure( L, rungcfn_lua, 1 );
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, ref);
+    lua_pushcclosure(L, rungcfn_lua, 1);
     // retain closure reference
-    ref = luaL_ref( L, LUA_REGISTRYINDEX );
+    ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    fn = (gcfn_t*)lua_newuserdata( L, sizeof( gcfn_t ) );
-    *fn = (gcfn_t){
-        .ref = ref,
-        .call = 1
-    };
-    luaL_getmetatable( L, MODULE_MT );
-    lua_setmetatable( L, -2 );
+    fn  = (gcfn_t *)lua_newuserdata(L, sizeof(gcfn_t));
+    *fn = (gcfn_t){.ref = ref, .call = 1};
+    luaL_getmetatable(L, MODULE_MT);
+    lua_setmetatable(L, -2);
 
     return 1;
 }
 
-
-LUALIB_API int luaopen_gcfn( lua_State *L )
+LUALIB_API int luaopen_gcfn(lua_State *L)
 {
     struct luaL_Reg mmethod[] = {
-        { "__tostring", tostring_lua },
-        { "__gc", gc_lua },
-        { NULL, NULL }
+        {"__tostring", tostring_lua},
+        {"__gc",       gc_lua      },
+        {NULL,         NULL        }
     };
     struct luaL_Reg method[] = {
-        { "enable", enable_lua },
-        { "disable", disable_lua },
-        { NULL, NULL }
+        {"enable",  enable_lua },
+        {"disable", disable_lua},
+        {NULL,      NULL       }
     };
     struct luaL_Reg *ptr = mmethod;
 
     // create gcfn metatable
-    luaL_newmetatable( L, MODULE_MT );
+    luaL_newmetatable(L, MODULE_MT);
     // metamethods
-    while( ptr->name ){
-        lua_pushstring( L, ptr->name );
-        lua_pushcfunction( L, ptr->func );
-        lua_rawset( L, -3 );
+    while (ptr->name) {
+        lua_pushstring(L, ptr->name);
+        lua_pushcfunction(L, ptr->func);
+        lua_rawset(L, -3);
         ptr++;
     }
     // metamethods
     ptr = method;
-    lua_pushstring( L, "__index" );
-    lua_newtable( L );
-    while( ptr->name ){
-        lua_pushstring( L, ptr->name );
-        lua_pushcfunction( L, ptr->func );
-        lua_rawset( L, -3 );
+    lua_pushstring(L, "__index");
+    lua_newtable(L);
+    while (ptr->name) {
+        lua_pushstring(L, ptr->name);
+        lua_pushcfunction(L, ptr->func);
+        lua_rawset(L, -3);
         ptr++;
     }
-    lua_rawset( L, -3 );
-    lua_pop( L, 1 );
+    lua_rawset(L, -3);
+    lua_pop(L, 1);
 
-    lua_pushcfunction( L, new_lua );
+    lua_pushcfunction(L, new_lua);
 
     return 1;
 }
