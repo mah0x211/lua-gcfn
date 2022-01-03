@@ -1,25 +1,31 @@
 lua-gcfn
 ====
 
+[![test](https://github.com/mah0x211/lua-gcfn/actions/workflows/test.yml/badge.svg)](https://github.com/mah0x211/lua-gcfn/actions/workflows/test.yml)
+
 gcfn create the finalizer object.
 
 
 ## Installation
 
 ```
-luarocks install gcfn --from=http://mah0x211.github.io/rocks/
+luarocks install gcfn
 ```
 
-## Create a Finalizer
+## Usage
 
-### f = gcfn.new( fn [, ...] )
+### gco = gcfn.new( fn [, ...] )
 
-create a new finalizer object.
+create a new gc fucntion object.
 
 **Parameters**
 
-- `fn:function`: finalize function that run in coroutine.
+- `fn:function`: a function that run in coroutine when GC occurs.
 - `...: `: arguments of finalize function
+
+**Returns**
+
+- `gco:gcfn`: gcfn object.
 
 
 **Example**
@@ -27,26 +33,21 @@ create a new finalizer object.
 ```lua
 local gcfn = require('gcfn')
 
--- create finalizer
-local f = gcfn.new(function(...)
+-- create new gcfn object
+local gco = gcfn.new(function(...)
     print(...)
 end, 'a', 'b', 'c' )
 
+gco = nil
+collectgarbage('collect')
 print('done')
 ```
 
-**Returns**
+### gco:disable()
 
-1. `f:userdata`: finalizer object.
+disable the invocation of GC function.
 
+### gco:enable()
 
-## Finalizer Methods
-
-### f:disable()
-
-disabling the finalizer.
-
-### f:enable()
-
-dnabling the finalizer.
+enable the invocation of GC function.
 
