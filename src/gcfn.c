@@ -48,6 +48,18 @@ static int enable_lua(lua_State *L)
     return 0;
 }
 
+#if LUA_VERSION_NUM >= 504
+static inline int resume(lua_State *L, lua_State *from, int narg)
+{
+    int nres = 0;
+    return lua_resume(L, from, narg, &nres);
+}
+#elif LUA_VERSION_NUM >= 502
+# define resume(L, from, narg) lua_resume(L, from, narg)
+#else
+# define resume(L, from, narg) lua_resume(L, narg)
+#endif
+
 static int rungcfn_lua(lua_State *L)
 {
     lua_State *co = NULL;
@@ -57,13 +69,7 @@ static int rungcfn_lua(lua_State *L)
     co = lua_tothread(L, 1);
 
     // run thread
-    if (
-#if LUA_VERSION_NUM >= 502
-        lua_resume(co, L, lua_gettop(co) - 1)
-#else
-        lua_resume(co, lua_gettop(co) - 1)
-#endif
-    ) {
+    if (resume(co, L, lua_gettop(co) - 1)) {
         fprintf(stderr, "%s\n", lua_tostring(co, -1));
     }
 
