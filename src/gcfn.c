@@ -33,6 +33,7 @@ static int REF_DEBUG_TRACEBACK = LUA_NOREF;
 
 typedef struct {
     int ref;
+    int ref_err;
     int call;
 } gcfn_t;
 
@@ -68,6 +69,26 @@ static int rungcfn_lua(lua_State *L)
     return 0;
 }
 
+static int errfunc_lua(lua_State *L)
+{
+    gcfn_t *fn = luaL_checkudata(L, 1, MODULE_MT);
+
+    if (lua_isnone(L, 2)) {
+        // release thread
+        luaL_unref(L, LUA_REGISTRYINDEX, fn->ref_err);
+        fn->ref_err = LUA_NOREF;
+    } else {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+        // create closure function
+        lua_pushinteger(L, lua_gettop(L) - 1);
+        lua_insert(L, 2);
+        lua_pushcclosure(L, rungcfn_lua, lua_gettop(L) - 1);
+        fn->ref_err = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+
+    return 0;
+}
+
 static int gc_lua(lua_State *L)
 {
     gcfn_t *fn = (gcfn_t *)lua_touserdata(L, 1);
@@ -76,20 +97,24 @@ static int gc_lua(lua_State *L)
     if (fn->call) {
         int errfn = 0;
 
-        if (REF_DEBUG_TRACEBACK != LUA_NOREF) {
+        if (fn->ref_err != LUA_NOREF) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref_err);
+            errfn = lua_gettop(L);
+        } else if (REF_DEBUG_TRACEBACK != LUA_NOREF) {
             lua_rawgeti(L, LUA_REGISTRYINDEX, REF_DEBUG_TRACEBACK);
             errfn = lua_gettop(L);
         }
 
         // call gcfn
         lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref);
-        if (lua_pcall(L, 0, 0, errfn)) {
+        if (lua_pcall(L, 0, 0, errfn) && fn->ref_err == LUA_NOREF) {
             fprintf(stderr, "%s\n", lua_tostring(L, -1));
         }
     }
 
     // release closure
     luaL_unref(L, LUA_REGISTRYINDEX, fn->ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, fn->ref_err);
 
     return 0;
 }
@@ -116,6 +141,7 @@ static int new_lua(lua_State *L)
     luaL_getmetatable(L, MODULE_MT);
     lua_setmetatable(L, -2);
     fn->ref     = ref;
+    fn->ref_err = LUA_NOREF;
     fn->call    = 1;
 
     return 1;
@@ -131,6 +157,7 @@ LUALIB_API int luaopen_gcfn(lua_State *L)
     struct luaL_Reg method[] = {
         {"enable",  enable_lua },
         {"disable", disable_lua},
+        {"errfunc", errfunc_lua},
         {NULL,      NULL       }
     };
     struct luaL_Reg *ptr = mmethod;

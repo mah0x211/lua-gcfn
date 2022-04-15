@@ -7,7 +7,7 @@ function testcase.create_gcfn()
     end))
     assert.match(tostring(gco), '^gcfn: ', false)
 
-    -- test that throws an erro if 1st argument is not function
+    -- test that throws an error if 1st argument is not function
     local err = assert.throws(gcfn, {})
     assert.match(err, '#1 .+ [(]function expected,', false)
 end
@@ -58,8 +58,34 @@ function testcase.throw_error_on_gc()
         error('throws an error')
     end
 
-    -- test that the gc function called on gc
-    assert(gcfn(fn))
+    local err
+    local errfn = function(...)
+        err = {
+            ...,
+        }
+    end
+
+    -- test that errfn will be called when gc function fails
+    local gco = assert(gcfn(fn))
+    gco:errfunc(errfn, 'foo', 'bar')
+    gco = nil
     collectgarbage('collect')
+    assert.equal(err[1], 'foo')
+    assert.equal(err[2], 'bar')
+    assert.match(err[3], 'throws an error')
+
+    -- test that remove errfn
+    err = nil
+    gco = assert(gcfn(fn))
+    gco:errfunc(errfn)
+    gco:errfunc()
+    gco = nil
+    collectgarbage('collect')
+    assert.is_nil(err)
+
+    -- test that throws an error if 1st argument is not function
+    gco = assert(gcfn(fn))
+    err = assert.throws(gco.errfunc, gco, {})
+    assert.match(err, '#2 .+ [(]function expected,', false)
 end
 

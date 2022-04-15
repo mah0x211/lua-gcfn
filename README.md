@@ -15,22 +15,6 @@ luarocks install gcfn
 
 ## Usage
 
-### gco = gcfn.new( fn [, ...] )
-
-create a new gc fucntion object.
-
-**Parameters**
-
-- `fn:function`: a function that run in coroutine when GC occurs.
-- `...: `: arguments of finalize function
-
-**Returns**
-
-- `gco:gcfn`: gcfn object.
-
-
-**Example**
-
 ```lua
 local gcfn = require('gcfn')
 
@@ -44,11 +28,41 @@ collectgarbage('collect')
 print('done')
 ```
 
-### gco:disable()
+
+## gco = gcfn.new( fn [, ...] )
+
+create a new gc fucntion object.
+
+**Parameters**
+
+- `fn:function`: a function to execute when GC occurs.
+- `...: `: arguments of function
+
+**Returns**
+
+- `gco:gcfn`: gcfn object.
+
+
+## gco:disable()
 
 disable the invocation of GC function.
 
-### gco:enable()
+
+## gco:enable()
 
 enable the invocation of GC function.
+
+
+## gco:errfunc( fn, ... )
+
+sets the error function to be called when the GC function fails.
+
+**Parameters**
+
+- `fn:function`: a function.
+- `...: `: arguments of function.
+
+**NOTE**
+
+The error object `err` is passed afterthe the arguments `...`.
 
