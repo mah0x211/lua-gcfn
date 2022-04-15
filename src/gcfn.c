@@ -50,15 +50,31 @@ static int enable_lua(lua_State *L)
     return 0;
 }
 
+static int rungcfn_lua(lua_State *L)
+{
+    int farg = 0;
+
+    // push arguments
+    lua_pushvalue(L, lua_upvalueindex(1));
+    farg = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    for (int i = 1; i <= farg; i++) {
+        lua_pushvalue(L, lua_upvalueindex(i + 1));
+        lua_insert(L, i);
+    }
+
+    lua_call(L, lua_gettop(L) - 1, 0);
+
+    return 0;
+}
+
 static int gc_lua(lua_State *L)
 {
     gcfn_t *fn = (gcfn_t *)lua_touserdata(L, 1);
 
     // call closure
     if (fn->call) {
-        lua_State *co = NULL;
-        int errfn     = 0;
-        int narg      = 0;
+        int errfn = 0;
 
         if (REF_DEBUG_TRACEBACK != LUA_NOREF) {
             lua_rawgeti(L, LUA_REGISTRYINDEX, REF_DEBUG_TRACEBACK);
@@ -67,11 +83,7 @@ static int gc_lua(lua_State *L)
 
         // call gcfn
         lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref);
-        co = lua_tothread(L, -1);
-        lua_pop(L, 1);
-        narg = lua_gettop(co) - 1;
-        lua_xmove(co, L, narg + 1);
-        if (lua_pcall(L, narg, 0, errfn)) {
+        if (lua_pcall(L, 0, 0, errfn)) {
             fprintf(stderr, "%s\n", lua_tostring(L, -1));
         }
     }
@@ -90,20 +102,21 @@ static int tostring_lua(lua_State *L)
 
 static int new_lua(lua_State *L)
 {
-    gcfn_t *fn    = NULL;
-    lua_State *co = NULL;
-    int ref       = LUA_NOREF;
+    gcfn_t *fn = NULL;
+    int ref    = LUA_NOREF;
 
     luaL_checktype(L, 1, LUA_TFUNCTION);
-    // move all argument to coroutine
-    co  = lua_newthread(L);
+    // create closure function
+    lua_pushinteger(L, lua_gettop(L));
+    lua_insert(L, 1);
+    lua_pushcclosure(L, rungcfn_lua, lua_gettop(L));
     ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    lua_xmove(L, co, lua_gettop(L));
 
-    fn  = (gcfn_t *)lua_newuserdata(L, sizeof(gcfn_t));
-    *fn = (gcfn_t){.ref = ref, .call = 1};
+    fn = (gcfn_t *)lua_newuserdata(L, sizeof(gcfn_t));
     luaL_getmetatable(L, MODULE_MT);
     lua_setmetatable(L, -2);
+    fn->ref     = ref;
+    fn->call    = 1;
 
     return 1;
 }
