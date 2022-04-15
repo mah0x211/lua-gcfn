@@ -1,5 +1,5 @@
-/*
- *  Copyright (C) 2017 Masatoshi Teruya
+/**
+ *  Copyright (C) 2017-2022 Masatoshi Fukunaga
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -29,6 +29,8 @@
 
 #define MODULE_MT "gcfn"
 
+static int REF_DEBUG_TRACEBACK = LUA_NOREF;
+
 typedef struct {
     int ref;
     int call;
@@ -48,43 +50,28 @@ static int enable_lua(lua_State *L)
     return 0;
 }
 
-#if LUA_VERSION_NUM >= 504
-static inline int resume(lua_State *L, lua_State *from, int narg)
-{
-    int nres = 0;
-    return lua_resume(L, from, narg, &nres);
-}
-#elif LUA_VERSION_NUM >= 502
-# define resume(L, from, narg) lua_resume(L, from, narg)
-#else
-# define resume(L, from, narg) lua_resume(L, narg)
-#endif
-
-static int rungcfn_lua(lua_State *L)
-{
-    lua_State *co = NULL;
-
-    // push upvalues to stack
-    lua_pushvalue(L, lua_upvalueindex(1));
-    co = lua_tothread(L, 1);
-
-    // run thread
-    if (resume(co, L, lua_gettop(co) - 1)) {
-        fprintf(stderr, "%s\n", lua_tostring(co, -1));
-    }
-
-    return 0;
-}
-
 static int gc_lua(lua_State *L)
 {
     gcfn_t *fn = (gcfn_t *)lua_touserdata(L, 1);
 
     // call closure
     if (fn->call) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref);
+        lua_State *co = NULL;
+        int errfn     = 0;
+        int narg      = 0;
+
+        if (REF_DEBUG_TRACEBACK != LUA_NOREF) {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, REF_DEBUG_TRACEBACK);
+            errfn = lua_gettop(L);
+        }
+
         // call gcfn
-        if (lua_pcall(L, 0, 0, 0)) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, fn->ref);
+        co = lua_tothread(L, -1);
+        lua_pop(L, 1);
+        narg = lua_gettop(co) - 1;
+        lua_xmove(co, L, narg + 1);
+        if (lua_pcall(L, narg, 0, errfn)) {
             fprintf(stderr, "%s\n", lua_tostring(L, -1));
         }
     }
@@ -112,13 +99,6 @@ static int new_lua(lua_State *L)
     co  = lua_newthread(L);
     ref = luaL_ref(L, LUA_REGISTRYINDEX);
     lua_xmove(L, co, lua_gettop(L));
-
-    // add closure function
-    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-    luaL_unref(L, LUA_REGISTRYINDEX, ref);
-    lua_pushcclosure(L, rungcfn_lua, 1);
-    // retain closure reference
-    ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
     fn  = (gcfn_t *)lua_newuserdata(L, sizeof(gcfn_t));
     *fn = (gcfn_t){.ref = ref, .call = 1};
@@ -163,6 +143,15 @@ LUALIB_API int luaopen_gcfn(lua_State *L)
     }
     lua_rawset(L, -3);
     lua_pop(L, 1);
+
+    // get debug.traceback function
+    lua_getglobal(L, "debug");
+    if (lua_type(L, -1) == LUA_TTABLE) {
+        lua_getfield(L, -1, "traceback");
+        if (lua_type(L, -1) == LUA_TFUNCTION) {
+            REF_DEBUG_TRACEBACK = luaL_ref(L, LUA_REGISTRYINDEX);
+        }
+    }
 
     lua_pushcfunction(L, new_lua);
 

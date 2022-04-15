@@ -1,23 +1,31 @@
 package = "gcfn"
 version = "scm-1"
 source = {
-    url = "git://github.com/mah0x211/lua-gcfn.git"
+    url = "git+https://github.com/mah0x211/lua-gcfn.git"
 }
 description = {
     summary = "create gc function for lua",
     homepage = "https://github.com/mah0x211/lua-gcfn",
     license = "MIT/X11",
-    maintainer = "Masatoshi Teruya"
+    maintainer = "Masatoshi Fukunaga"
 }
 dependencies = {
     "lua >= 5.1",
 }
 build = {
-    type = "builtin",
-    modules = {
-        ["gcfn"] = {
-            sources = { "src/gcfn.c" }
-        },
+    type = "make",
+    build_variables = {
+        LIB_EXTENSION   = "$(LIB_EXTENSION)",
+        SRCDIR          = "src",
+        CFLAGS          = "$(CFLAGS)",
+        WARNINGS        = "-Wall -Wno-trigraphs -Wmissing-field-initializers -Wreturn-type -Wmissing-braces -Wparentheses -Wno-switch -Wunused-function -Wunused-label -Wunused-parameter -Wunused-variable -Wunused-value -Wuninitialized -Wunknown-pragmas -Wshadow -Wsign-compare",
+        CPPFLAGS        = "-I$(LUA_INCDIR)",
+        LDFLAGS         = "$(LIBFLAG)",
+        GCFN_COVERAGE   = "$(GCFN_COVERAGE)",
+    },
+    install_variables = {
+        LIB_EXTENSION   = "$(LIB_EXTENSION)",
+        LIBDIR          = "$(LIBDIR)",
+        LUA_INCDIR      = "$(LUA_INCDIR)",
     }
 }
-
