@@ -19,7 +19,7 @@ luarocks install gcfn
 local gcfn = require('gcfn')
 
 -- create new gcfn object
-local gco = gcfn.new(function(...)
+local gco = gcfn(function(...)
     print(...)
 end, 'a', 'b', 'c' )
 
@@ -29,7 +29,7 @@ print('done')
 ```
 
 
-## gco = gcfn.new( fn [, ...] )
+## gco = gcfn( fn [, ...] )
 
 create a new gc fucntion object.
 
